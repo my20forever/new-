@@ -10,6 +10,9 @@
   Google News 的搜尋 RSS（site:reuters.com / site:apnews.com）
   當作免費替代方案。這是非官方 workaround，Google 若調整
   規則可能會失效，屆時需要更新 INTL_QUERIES 或改用付費新聞 API。
+- 國際新聞（英文）會自動翻譯成繁體中文再送出，使用 deep-translator
+  套件（背後呼叫 Google 翻譯免費網頁版接口）。同樣是非官方用法，
+  翻譯品質為機器翻譯，重要資訊建議點連結回原文確認。
 
 需要的環境變數（GitHub Actions 用 Secrets 注入）：
     LINE_CHANNEL_ACCESS_TOKEN   LINE 官方帳號的 Messaging API channel access token
@@ -24,6 +27,7 @@ from datetime import datetime, timezone
 
 import feedparser
 import requests
+from deep_translator import GoogleTranslator
 
 # ---------- 新聞來源設定 ----------
 
@@ -68,6 +72,17 @@ def entry_timestamp(entry):
         if value:
             return time.mktime(value)
     return 0
+
+
+def translate_to_zh(text: str) -> str:
+    """把英文標題/摘要翻成繁體中文；失敗就回傳原文，不讓整個腳本掛掉。"""
+    if not text:
+        return text
+    try:
+        return GoogleTranslator(source="auto", target="zh-TW").translate(text)
+    except Exception as e:
+        print(f"[警告] 翻譯失敗，改用原文：{e}", file=sys.stderr)
+        return text
 
 
 def resolve_final_url(url: str) -> str:
@@ -127,10 +142,12 @@ def fetch_international():
     items.sort(key=lambda x: x["ts"], reverse=True)
     top = items[:INTL_COUNT]
 
-    # 只對最後真的要用到的幾則解析真實網址（節省時間）
+    # 只對最後真的要用到的幾則做處理（節省時間／翻譯額度）
     for item in top:
         if item["link"]:
             item["link"] = resolve_final_url(item["link"])
+        item["title"] = translate_to_zh(item["title"])
+        item["summary"] = translate_to_zh(item["summary"])
 
     return top
 
